@@ -10,11 +10,34 @@
 import shutil
 import subprocess
 import sys
+import os
 from pathlib import Path
 
+CURRENT_LLAMA_STACK_VERSION = "0.2.23"
+LLAMA_STACK_VERSION = os.getenv("LLAMA_STACK_VERSION", CURRENT_LLAMA_STACK_VERSION)
 BASE_REQUIREMENTS = [
-    "llama-stack==0.2.18",
+    f"llama-stack=={LLAMA_STACK_VERSION}",
 ]
+
+source_install_command = """RUN tmp_build_dir=$(mktemp -d) && \\
+    git clone --filter=blob:none --no-checkout https://github.com/llamastack/llama-stack.git $tmp_build_dir && \\
+    cd $tmp_build_dir && \\
+    git checkout {llama_stack_version} && \\
+    pip install --no-cache -e ."""
+
+
+def get_llama_stack_install(llama_stack_version):
+    # If the version is a commit SHA or a short commit SHA, we need to install from source
+    if is_install_from_source(llama_stack_version):
+        print(f"Installing llama-stack from source: {llama_stack_version}")
+        return source_install_command.format(
+            llama_stack_version=llama_stack_version
+        ).rstrip()
+
+
+def is_install_from_source(llama_stack_version):
+    """Check if version string is a git commit SHA (no dots = SHA, has dots = version)."""
+    return "." not in llama_stack_version
 
 
 def check_llama_installed():
@@ -80,8 +103,25 @@ def get_dependencies():
                         set(parts[3].split())
                     )  # Sort the package names and remove duplicates
 
+                    # Add quotes to packages with > or < to prevent bash redirection
+                    packages = [
+                        f"'{package}'"
+                        if (">" in package or "<" in package)
+                        else package
+                        for package in packages
+                    ]
+
+                    # Modify pymilvus package to include milvus-lite extra
+                    packages = [
+                        package.replace("pymilvus", "pymilvus[milvus-lite]")
+                        if "pymilvus" in package and "[milvus-lite]" not in package
+                        else package
+                        for package in packages
+                    ]
+                    packages = sorted(set(packages))
+
                     # Determine command type and format accordingly
-                    if "--index-url" in line:
+                    if ("--index-url" in line) or ("--extra-index-url" in line):
                         full_cmd = " ".join(cmd_parts + [" ".join(packages)])
                         torch_deps.append(full_cmd)
                     elif "--no-deps" in line:
@@ -104,7 +144,8 @@ def get_dependencies():
         all_deps.extend(sorted(no_deps))  # No-deps installs
         all_deps.extend(sorted(no_cache))  # No-cache installs
 
-        return "\n".join(all_deps)
+        result = "\n".join(all_deps)
+        return result
     except subprocess.CalledProcessError as e:
         print(f"Error executing command: {e}")
         print(f"Command output: {e.output}")
@@ -112,7 +153,7 @@ def get_dependencies():
         sys.exit(1)
 
 
-def generate_containerfile(dependencies):
+def generate_containerfile(dependencies, llama_stack_install):
     """Generate Containerfile from template with dependencies."""
     template_path = Path("distribution/Containerfile.in")
     output_path = Path("distribution/Containerfile")
@@ -130,7 +171,14 @@ def generate_containerfile(dependencies):
 
     # Process template using string formatting
     containerfile_content = warning + template_content.format(
-        dependencies=dependencies.rstrip()
+        dependencies=dependencies.rstrip(),
+        llama_stack_install_source=llama_stack_install if llama_stack_install else "",
+    )
+
+    # Remove any blank lines that result from empty substitutions
+    containerfile_content = (
+        "\n".join(line for line in containerfile_content.splitlines() if line.strip())
+        + "\n"
     )
 
     # Write output
@@ -144,14 +192,19 @@ def main():
     print("Checking llama installation...")
     check_llama_installed()
 
-    print("Checking llama-stack version...")
-    check_llama_stack_version()
+    # Do not perform version check if installing from source
+    if not is_install_from_source(LLAMA_STACK_VERSION):
+        print("Checking llama-stack version...")
+        check_llama_stack_version()
 
     print("Getting dependencies...")
     dependencies = get_dependencies()
 
+    print("Getting llama-stack install...")
+    llama_stack_install = get_llama_stack_install(LLAMA_STACK_VERSION)
+
     print("Generating Containerfile...")
-    generate_containerfile(dependencies)
+    generate_containerfile(dependencies, llama_stack_install)
 
     print("Done!")
 

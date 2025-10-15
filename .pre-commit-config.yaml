@@ -35,6 +35,16 @@ repos:
         args: [ --fix ]
     -   id: ruff-format
 
+-   repo: https://github.com/rhysd/actionlint
+    rev: v1.7.7
+    hooks:
+      - id: actionlint
+
+-   repo: https://github.com/koalaman/shellcheck-precommit
+    rev: v0.11.0
+    hooks:
+    -   id: shellcheck
+
 -   repo: local
     hooks:
       - id: pkg-gen
@@ -46,4 +56,14 @@ repos:
         always_run: true
         files: ^distribution/.*$
         additional_dependencies:
-          - llama-stack==0.2.18
+          - llama-stack==0.2.23
+
+      - id: doc-gen
+        name: Distribution Documentation
+        entry: ./scripts/gen_distro_docs.py
+        language: python
+        pass_filenames: false
+        require_serial: true
+        files: ^distribution/run\.yaml$
+        additional_dependencies:
+          - pyyaml==6.0.2

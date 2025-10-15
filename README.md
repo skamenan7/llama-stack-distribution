@@ -1,49 +1,55 @@
-# Red Hat Distribution Build Instructions
+# Open Data Hub Llama Stack Distribution
 
-This directory contains the necessary files to build a Red Hat compatible container image for the llama-stack.
+![Build](https://github.com/opendatahub-io/llama-stack-distribution/actions/workflows/redhat-distro-container.yml/badge.svg?branch=main)
 
-## Prerequisites
+This directory contains the necessary files to build an Open Data Hub-compatible container image for [Llama Stack](https://github.com/llamastack/llama-stack).
 
-- Python >=3.11
-- `llama` CLI tool installed: `pip install llama-stack`
-- Podman or Docker installed
+To learn more about the distribution image content, see the [README](distribution/README.md) in the `distribution/` directory.
 
-## Generating the Containerfile
+## Build Instructions
+
+### Prerequisites
+
+- The `pre-commit` tool is [installed](https://pre-commit.com/#install)
+
+### Generating the Containerfile
 
 The Containerfile is auto-generated from a template. To generate it:
 
-1. Make sure you have the `llama` CLI tool installed
-2. Run the build script from root of this git repo:
-   ```bash
-   ./distribution/build.py
-   ```
+```
+pre-commit run --all-files
+```
 
 This will:
-- Check for the `llama` CLI installation
-- Generate dependencies using `llama stack build`
+- Install the dependencies (llama-stack etc) in a virtual environment
+- Execute the build script `./distribution/build.py`
+
+The build script will:
+- Execute the `llama` CLI to generate the dependencies
 - Create a new `Containerfile` with the required dependencies
 
-## Editing the Containerfile
+### Editing the Containerfile
 
-The Containerfile is auto-generated from a template. To edit it, you can modify the template in `distribution/Containerfile.in` and run the build script again.
-NEVER edit the generated `Containerfile` manually.
+The Containerfile is auto-generated from a template. To edit it, you can modify the template in `distribution/Containerfile.in` and run pre-commit again.
 
-## Building the Container Image
+> [!WARNING]
+> *NEVER* edit the generated `Containerfile` manually.
 
-Once the Containerfile is generated, you can build the image using either Podman or Docker:
+## Run Instructions
 
-### Using Podman build image for x86_64
-
-```bash
-podman build --platform linux/amd64 -f distribution/Containerfile -t rh .
-```
-
-## Notes
-
-- The generated Containerfile should not be modified manually as it will be overwritten the next time you run the build script
-
-## Push the image to a registry
+> [!TIP]
+> Ensure you include any env vars you might need for providers in the container env - you can read more about that [here](distribution/README.md).
 
 ```bash
-podman push <build-ID> quay.io/opendatahub/llama-stack:rh-distribution
+podman run -p 8321:8321 quay.io/opendatahub/llama-stack:<tag>
 ```
+
+### What image tag should I use?
+
+Various tags are maintained for this image:
+
+- `latest` will always point to the latest image that has been built off of a merge to the `main` branch
+  - You can also pull an older image built off of `main` by using the SHA of the merge commit as the tag
+- `rhoai-v*-latest` will always point to the latest image that has been built off of a merge to the corresponding `rhoai-v*` branch
+
+You can see the source code that implements this build strategy [here](.github/workflows/redhat-distro-container.yml)

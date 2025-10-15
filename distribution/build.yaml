@@ -6,14 +6,25 @@ distribution_spec:
     - provider_type: remote::vllm
     - provider_type: remote::bedrock
     - provider_type: inline::sentence-transformers
+    - provider_type: remote::watsonx
+    - provider_type: remote::azure
+    - provider_type: remote::vertexai
+    - provider_type: remote::openai
     vector_io:
     - provider_type: inline::milvus
+    - provider_type: remote::milvus
     safety:
     - provider_type: remote::trustyai_fms
+      module: llama_stack_provider_trustyai_fms==0.2.3
     agents:
     - provider_type: inline::meta-reference
     eval:
     - provider_type: remote::trustyai_lmeval
+      module: llama_stack_provider_lmeval==0.3.0
+    - provider_type: inline::trustyai_ragas
+      module: llama_stack_provider_ragas==0.3.2
+    - provider_type: remote::trustyai_ragas
+      module: llama_stack_provider_ragas[remote]==0.3.2
     datasetio:
     - provider_type: remote::huggingface
     - provider_type: inline::localfs
@@ -28,10 +39,13 @@ distribution_spec:
     - provider_type: remote::tavily-search
     - provider_type: inline::rag-runtime
     - provider_type: remote::model-context-protocol
+    files:
+    - provider_type: inline::localfs
   container_image: registry.redhat.io/ubi9/python-311:9.6-1749631027
 additional_pip_packages:
 - aiosqlite
 - sqlalchemy[asyncio]
+- asyncpg
+- psycopg2-binary
 image_type: container
 image_name: llama-stack-rh
-external_providers_dir: distribution/providers.d
