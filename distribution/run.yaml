@@ -20,10 +20,10 @@ providers:
       max_tokens: ${env.VLLM_MAX_TOKENS:=4096}
       api_token: ${env.VLLM_API_TOKEN:=fake}
       tls_verify: ${env.VLLM_TLS_VERIFY:=true}
-  - provider_id: ${env.AWS_BEDROCK_API_KEY:+bedrock}
+  - provider_id: ${env.AWS_BEARER_TOKEN_BEDROCK:+bedrock}
     provider_type: remote::bedrock
     config:
-      api_key: ${env.AWS_BEDROCK_API_KEY:=}
+      api_key: ${env.AWS_BEARER_TOKEN_BEDROCK:=}
       region_name: ${env.AWS_DEFAULT_REGION:=us-east-2}
   - provider_id: sentence-transformers
     provider_type: inline::sentence-transformers
