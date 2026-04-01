@@ -28,16 +28,30 @@ function start_and_wait_for_llama_stack_container {
     --env "POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-llamastack}"
   )
 
-  # Only add Vertex AI configuration if VERTEX_AI_PROJECT is set
-  if [ -n "${VERTEX_AI_PROJECT:-}" ]; then
+  # Conditionally add vLLM API token (needed for MaaS)
+  if [ -n "${VLLM_API_TOKEN:-}" ]; then
+    docker_args+=(--env "VLLM_API_TOKEN=$VLLM_API_TOKEN")
+  fi
+
+  # Conditionally add MaaS embedding configuration
+  if [ -n "${VLLM_EMBEDDING_API_TOKEN:-}" ]; then
+    docker_args+=(--env "VLLM_EMBEDDING_API_TOKEN=$VLLM_EMBEDDING_API_TOKEN")
+  fi
+  if [ -n "${EMBEDDING_PROVIDER:-}" ]; then
+    docker_args+=(--env "EMBEDDING_PROVIDER=$EMBEDDING_PROVIDER")
+  fi
+  if [ -n "${EMBEDDING_PROVIDER_MODEL_ID:-}" ]; then
+    docker_args+=(--env "EMBEDDING_PROVIDER_MODEL_ID=$EMBEDDING_PROVIDER_MODEL_ID")
+  fi
+
+  # Only add Vertex AI configuration if VERTEX_AI_PROJECT is set AND credentials file exists
+  # (GCP auth step only runs on amd64, so credentials won't exist on arm64)
+  if [ -n "${VERTEX_AI_PROJECT:-}" ] && [ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ] && [ -f "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
     docker_args+=(
       --env "VERTEX_AI_PROJECT=$VERTEX_AI_PROJECT"
       --env "GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/gcp-credentials"
+      --volume "$GOOGLE_APPLICATION_CREDENTIALS:/run/secrets/gcp-credentials:ro"
     )
-    # Only mount credentials if the file exists
-    if [ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ] && [ -f "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
-      docker_args+=(--volume "$GOOGLE_APPLICATION_CREDENTIALS:/run/secrets/gcp-credentials:ro")
-    fi
   fi
 
   # Only add OpenAI configuration if OPENAI_API_KEY is set
@@ -169,48 +183,57 @@ main() {
   # Track failures
   failed_checks=()
 
-  # Build list of models to test based on available configuration
-  models_to_test=("$VLLM_INFERENCE_MODEL" "$EMBEDDING_MODEL")
-  inference_models_to_test=("$VLLM_INFERENCE_MODEL")
+  if [ "${SKIP_INFERENCE_TESTS:-false}" == "true" ]; then
+    echo "===> SKIP_INFERENCE_TESTS is set, running container health and PostgreSQL verification only"
+    echo "===> Skipping model list, inference, and data population checks (no vLLM available)"
 
-  # Only include Vertex AI models if VERTEX_AI_PROJECT is set
-  if [ -n "${VERTEX_AI_PROJECT:-}" ]; then
-    echo "===> VERTEX_AI_PROJECT is set, including Vertex AI models in tests"
-    models_to_test+=("$VERTEX_AI_INFERENCE_MODEL")
-    inference_models_to_test+=("$VERTEX_AI_INFERENCE_MODEL")
-  else
-    echo "===> VERTEX_AI_PROJECT is not set, skipping Vertex AI models"
-  fi
-
-  # Only include OpenAI models if OPENAI_API_KEY is set
-  if [ -n "${OPENAI_API_KEY:-}" ]; then
-    echo "===> OPENAI_API_KEY is set, including OpenAI models in tests"
-    models_to_test+=("$OPENAI_INFERENCE_MODEL")
-    inference_models_to_test+=("$OPENAI_INFERENCE_MODEL")
-  else
-    echo "===> OPENAI_API_KEY is not set, skipping OpenAI models"
-  fi
-
-  echo "===> Testing model list for all models..."
-  for model in "${models_to_test[@]}"; do
-    if ! test_model_list "$model"; then
-      failed_checks+=("model_list:$model")
+    if ! test_postgres_tables_exist; then
+      failed_checks+=("postgres:tables")
     fi
-  done
+  else
+    # Build list of models to test based on available configuration
+    models_to_test=("$VLLM_INFERENCE_MODEL" "$EMBEDDING_MODEL")
+    inference_models_to_test=("$VLLM_INFERENCE_MODEL")
 
-  echo "===> Testing inference for all models..."
-  for model in "${inference_models_to_test[@]}"; do
-    if ! test_model_openai_inference "$model"; then
-      failed_checks+=("inference:$model")
+    # Only include Vertex AI models if credentials are available
+    if [ -n "${VERTEX_AI_PROJECT:-}" ] && [ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ] && [ -f "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
+      echo "===> Vertex AI credentials available, including Vertex AI models in tests"
+      models_to_test+=("$VERTEX_AI_INFERENCE_MODEL")
+      inference_models_to_test+=("$VERTEX_AI_INFERENCE_MODEL")
+    else
+      echo "===> Vertex AI credentials not available, skipping Vertex AI models"
     fi
-  done
 
-  # Verify PostgreSQL tables and data
-  if ! test_postgres_tables_exist; then
-    failed_checks+=("postgres:tables")
-  fi
-  if ! test_postgres_populated; then
-    failed_checks+=("postgres:data")
+    # Only include OpenAI models if OPENAI_API_KEY is set
+    if [ -n "${OPENAI_API_KEY:-}" ]; then
+      echo "===> OPENAI_API_KEY is set, including OpenAI models in tests"
+      models_to_test+=("$OPENAI_INFERENCE_MODEL")
+      inference_models_to_test+=("$OPENAI_INFERENCE_MODEL")
+    else
+      echo "===> OPENAI_API_KEY is not set, skipping OpenAI models"
+    fi
+
+    echo "===> Testing model list for all models..."
+    for model in "${models_to_test[@]}"; do
+      if ! test_model_list "$model"; then
+        failed_checks+=("model_list:$model")
+      fi
+    done
+
+    echo "===> Testing inference for all models..."
+    for model in "${inference_models_to_test[@]}"; do
+      if ! test_model_openai_inference "$model"; then
+        failed_checks+=("inference:$model")
+      fi
+    done
+
+    # Verify PostgreSQL tables and data
+    if ! test_postgres_tables_exist; then
+      failed_checks+=("postgres:tables")
+    fi
+    if ! test_postgres_populated; then
+      failed_checks+=("postgres:data")
+    fi
   fi
 
   # Report results
