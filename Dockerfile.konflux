@@ -44,4 +44,9 @@ COPY --chmod=755 distribution/entrypoint.sh ${APP_ROOT}/entrypoint.sh
 # Download embedding model
 RUN hf download ibm-granite/granite-embedding-125m-english
 
+# Pre-cache tiktoken cl100k_base encoding to avoid runtime download
+# from openaipublic.blob.core.windows.net (used by vector_store chunking)
+ENV TIKTOKEN_CACHE_DIR="${HOME}/.cache/tiktoken"
+RUN python3 -c "import tiktoken; tiktoken.get_encoding('cl100k_base')"
+
 ENTRYPOINT [ "/opt/app-root/entrypoint.sh" ]
